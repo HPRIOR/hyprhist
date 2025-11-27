@@ -1,10 +1,10 @@
 [package]
-name = "hyprstate"
+name = "hyprhist"
 version = "0.1.0"
 edition = "2024"
 
 [[bin]]
-name = "hyprstate"
+name = "hyprhist"
 path = "src/main.rs"
 
 [lib]
@@ -12,3 +12,7 @@ name = "lib"
 path = "src/lib/lib.rs"
 
 [dependencies]
+chrono = { version = "0.4.42", features = ["serde"] }
+hyprland = "0.4.0-beta.3"
+serde = "1.0.228"
+tokio = "1.48.0"

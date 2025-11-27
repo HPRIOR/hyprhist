@@ -58,7 +58,7 @@
           inherit cargoArtifacts;
           meta = {
             description = "Rust application";
-            mainProgram = "hyprstate";
+            mainProgram = "hyprhist";
           };
         });
     in {
