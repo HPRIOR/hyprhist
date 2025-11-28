@@ -1,3 +1,5 @@
+#![allow(unused)]
+
 trait HasId {
     type ID: Eq + PartialEq;
     fn get_id(&self) -> Self::ID;
@@ -66,34 +68,39 @@ impl<T: HasId> EventHistory<T> {
         }
     }
 
-    pub fn next_ref(&self) -> Option<&T> {
+    pub fn forward(&mut self) -> Option<&T> {
         if self.cursor == self.head {
             // Already at the latest event
             return None;
         }
 
         let new_cursor_position = self.next_idx(self.cursor);
+        self.cursor = new_cursor_position;
         Some(&self.events[new_cursor_position])
     }
 
-    pub fn prev_ref(&self) -> Option<&T> {
+    pub fn backward(&mut self) -> Option<&T> {
+        if self.cursor == self.history_start {
+            return None;
+        }
+
         let new_cursor_position = self.prev_idx(self.cursor);
-        // Wrapping has occured
         if self.in_valid_range(new_cursor_position) {
+            self.cursor = new_cursor_position;
             Some(&self.events[new_cursor_position])
         } else {
             None
         }
     }
 
-    pub fn add(&mut self, item: T) {
+    pub fn add(&mut self, item: T) -> Option<&T> {
         let is_duplicate_item = self
             .events
             .get(self.cursor)
             .is_some_and(|current_item| item.get_id() == current_item.get_id());
 
         if is_duplicate_item {
-            return;
+            return None;
         }
 
         // When the cursor is detatched and history is not static we want the
@@ -127,8 +134,221 @@ impl<T: HasId> EventHistory<T> {
 
         if insert_idx == self.events.len() {
             self.events.push(item);
+            Some(&self.events[self.events.len() - 1])
         } else {
             self.events[insert_idx] = item;
+            Some(&self.events[insert_idx])
         }
+    }
+}
+
+#[cfg(test)]
+mod test {
+    use crate::event_history::{EventHistory, HasId};
+
+    impl HasId for i16 {
+        type ID = i16;
+
+        fn get_id(&self) -> Self::ID {
+            *self
+        }
+    }
+
+    #[test]
+    fn can_add_events_to_history() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.events.len() == 4);
+    }
+
+    #[test]
+    fn duplicates_are_not_added_to_history() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        assert!(event_history.add(0) == Some(&0));
+        assert!(event_history.add(0).is_none());
+
+        assert!(event_history.events.len() == 1);
+    }
+
+    #[test]
+    fn cursor_tracks_head_if_not_moved() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.cursor == 3);
+        assert!(event_history.head == 3);
+    }
+
+    #[test]
+    fn cursor_cannot_move_forward_when_at_head() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.forward().is_none());
+        assert!(event_history.cursor == 3);
+    }
+
+    #[test]
+    fn cursor_can_move_back_when_at_head() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.cursor == 2);
+    }
+
+    #[test]
+    fn cursor_cannot_move_past_history_start() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.history_start == 0);
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.backward() == Some(&1));
+        assert!(event_history.backward() == Some(&0));
+        assert!(event_history.backward().is_none());
+        assert!(event_history.cursor == 0);
+    }
+
+    #[test]
+    fn cursor_can_move_back_and_forward() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.history_start == 0);
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.backward() == Some(&1));
+        assert!(event_history.backward() == Some(&0));
+        assert!(event_history.backward().is_none());
+        assert!(event_history.forward() == Some(&1));
+        assert!(event_history.forward() == Some(&2));
+        assert!(event_history.forward() == Some(&3));
+        assert!(event_history.cursor == 3);
+    }
+
+    #[test]
+    fn adding_event_with_detatched_cursor_truncates_history() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.backward() == Some(&1));
+
+        event_history.add(4);
+        // length of events will not have changed
+        assert!(event_history.events.len() == 4);
+        assert!(event_history.cursor == 2);
+        assert!(event_history.head == 2);
+        assert!(event_history.forward().is_none());
+    }
+
+    #[test]
+    fn adding_event_beyond_capacity_wraps_head_around_buffer() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(event_history.head == 0);
+        assert!(event_history.cursor == 0);
+    }
+
+    #[test]
+    fn cursor_can_wrap_back_around_buffer() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(event_history.backward() == Some(&3));
+    }
+
+    #[test]
+    fn adding_event_beyond_capacity_makes_history_dynamic() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(!event_history.static_history);
+    }
+
+    #[test]
+    fn adding_event_beyond_capacity_moves_history_beyond_head() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(event_history.head == 0);
+        assert!(event_history.history_start == 1);
+    }
+
+    #[test]
+    fn cursor_stops_at_dynamic_history_start() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(event_history.backward() == Some(&3));
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.backward() == Some(&1));
+        assert!(event_history.backward().is_none());
+    }
+
+    #[test]
+    fn adding_event_with_detatched_cursor_truncates_history_around_wrapped_buffer() {
+        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+        event_history.add(5); // added to idx 2
+
+        // buffer is [4, 5, 2. 3].
+        assert!(event_history.backward() == Some(&4));
+        assert!(event_history.backward() == Some(&3));
+        assert!(event_history.add(6) == Some(&6));
+        // buffer now [6, 5, 2, 3], only 2, 3 and 6 should be reachable
+        assert!(!event_history.static_history);
+        assert!(event_history.history_start == 2);
+        assert!(event_history.head == 0);
+        assert!(event_history.backward() == Some(&3));
+        assert!(event_history.backward() == Some(&2));
+        assert!(event_history.backward().is_none());
     }
 }
