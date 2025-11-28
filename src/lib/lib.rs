@@ -1,6 +1,1 @@
-mod event_history;
-
-#[must_use]
-pub fn lib() -> &'static str {
-    "Hello world!"
-}
+pub mod event_history;

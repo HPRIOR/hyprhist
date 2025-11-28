@@ -1,11 +1,14 @@
 #![allow(unused)]
 
-trait HasId {
+use hyprland::event_listener::Event;
+use log::info;
+
+pub trait HasId {
     type ID: Eq + PartialEq;
-    fn get_id(&self) -> Self::ID;
+    fn get_id(&self) -> &Self::ID;
 }
 
-struct EventHistory<T: HasId> {
+pub struct EventHistory<T: HasId> {
     max_size: usize,
     /// Moveable cursor in the event history. Can never exceed head, but can 'detatch' from head
     /// when tracking back through the event history.
@@ -27,7 +30,8 @@ struct EventHistory<T: HasId> {
 }
 
 impl<T: HasId> EventHistory<T> {
-    fn new(max_size: usize) -> Self {
+    pub fn new(max_size: usize) -> Self {
+        info!("Creating event history with max_size: {max_size}");
         Self {
             max_size,
             cursor: 0,
@@ -71,6 +75,7 @@ impl<T: HasId> EventHistory<T> {
     pub fn forward(&mut self) -> Option<&T> {
         if self.cursor == self.head {
             // Already at the latest event
+            info!("Forward move ignored; cursor already at head {}", self.head);
             return None;
         }
 
@@ -81,6 +86,10 @@ impl<T: HasId> EventHistory<T> {
 
     pub fn backward(&mut self) -> Option<&T> {
         if self.cursor == self.history_start {
+            info!(
+                "Backward move ignored; cursor at history_start {}",
+                self.history_start
+            );
             return None;
         }
 
@@ -89,6 +98,7 @@ impl<T: HasId> EventHistory<T> {
             self.cursor = new_cursor_position;
             Some(&self.events[new_cursor_position])
         } else {
+            info!("Backward move blocked; idx {new_cursor_position} outside valid range");
             None
         }
     }
@@ -100,6 +110,10 @@ impl<T: HasId> EventHistory<T> {
             .is_some_and(|current_item| item.get_id() == current_item.get_id());
 
         if is_duplicate_item {
+            info!(
+                "Add skipped; duplicate item at cursor {} (head {})",
+                self.cursor, self.head
+            );
             return None;
         }
 
@@ -108,6 +122,11 @@ impl<T: HasId> EventHistory<T> {
         // of the buffer when cursor tracks backwards.
         let cursor_is_detached = self.head != self.cursor;
         if cursor_is_detached && !self.static_history {
+            let new_start = self.next_idx(self.head);
+            info!(
+                "History truncated after detached cursor; history_start: {} -> {}",
+                self.history_start, new_start
+            );
             self.history_start = self.next_idx(self.head);
         }
 
@@ -129,16 +148,36 @@ impl<T: HasId> EventHistory<T> {
         let buffer_full = self.events.len() == self.max_size;
         if buffer_full && self.head == self.history_start {
             self.static_history = false;
+            let new_start = self.next_idx(self.history_start);
+            info!(
+                "History buffer full; advancing history_start {} -> {}",
+                self.history_start, new_start
+            );
             self.history_start = self.next_idx(self.history_start);
         }
 
-        if insert_idx == self.events.len() {
+        let result = if insert_idx == self.events.len() {
             self.events.push(item);
             Some(&self.events[self.events.len() - 1])
         } else {
             self.events[insert_idx] = item;
             Some(&self.events[insert_idx])
+        };
+
+        if result.is_some() {
+            info!(
+                "Event added at idx {}; cursor={}, head={}, history_start={}, static_history={}",
+                insert_idx, self.cursor, self.head, self.history_start, self.static_history
+            );
         }
+
+        result
+    }
+}
+
+impl<T: HasId> Default for EventHistory<T> {
+    fn default() -> Self {
+        EventHistory::new(100)
     }
 }
 
@@ -149,8 +188,8 @@ mod test {
     impl HasId for i16 {
         type ID = i16;
 
-        fn get_id(&self) -> Self::ID {
-            *self
+        fn get_id(&self) -> &Self::ID {
+            self
         }
     }
 

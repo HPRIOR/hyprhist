@@ -12,7 +12,7 @@ name = "lib"
 path = "src/lib/lib.rs"
 
 [dependencies]
-chrono = { version = "0.4.42", features = ["serde"] }
+chrono = { version = "0.4.42", features = [] }
 hyprland = "0.4.0-beta.3"
-serde = "1.0.228"
+log = "0.4.28"
 tokio = "1.48.0"
