@@ -1,28 +1,39 @@
-use chrono::NaiveDateTime;
-use hyprland::event_listener::{AsyncEventListener, WindowEventData};
-use hyprland::prelude::*;
-use serde::{Deserialize, Serialize};
+use std::sync::{Arc, Mutex};
 
-#[derive(Serialize, Deserialize)]
-struct WindowEvent {
-    address: String,
-    time: NaiveDateTime,
+use env_logger::Env;
+use lib::{
+    cli::{self, Cli, Command, DaemonCommand, DaemonFocus, FocusCommand},
+    daemon,
+    event_history::{self, EventHistory},
+    hypr_events::{self},
+    types::{HyprEventHistory, SharedEventHistory, WindowEvent},
+};
+
+fn shared_mutex<T>(of: T) -> Arc<Mutex<T>> {
+    Arc::new(Mutex::new(of))
 }
 
 #[tokio::main(flavor = "current_thread")]
-async fn main() -> hyprland::Result<()> {
-    // Create a event listener
-    let mut event_listener = AsyncEventListener::new();
+async fn main() -> anyhow::Result<()> {
+    env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    #[allow(deprecated)]
-    event_listener.add_active_window_changed_handler(async_closure! {
-        |id| {
-            if let Some(WindowEventData { class, title, address }) = id {
-                // queue.clone().push_back(address.clone());
-            }
-        }
-    });
+    let cli: Cli = cli::parse_cli();
 
-    event_listener.start_listener_async().await?;
+    let focus_events: SharedEventHistory<WindowEvent> = shared_mutex(EventHistory::default());
+
+    let event_history = HyprEventHistory {
+        focus_events: Some(focus_events),
+    };
+
+    hypr_events::listen(event_history.clone()).await?;
+
+    match cli.command {
+        Command::Daemon { command } => daemon::run(command, event_history.clone()).await?,
+        Command::Focus { command } => match command {
+          FocusCommand::Next => todo!(),
+            FocusCommand::Prev => todo!(),
+        },
+    };
+
     Ok(())
 }

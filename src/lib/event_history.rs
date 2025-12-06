@@ -3,10 +3,9 @@
 use hyprland::event_listener::Event;
 use log::info;
 
-pub trait HasId {
-    type ID: Eq + PartialEq;
-    fn get_id(&self) -> &Self::ID;
-}
+use crate::types::HasId;
+
+type MaybeEventFilter<T> = Option<Box<dyn Fn(&T) -> bool + Send + Sync>>;
 
 pub struct EventHistory<T: HasId> {
     max_size: usize,
@@ -27,9 +26,11 @@ pub struct EventHistory<T: HasId> {
     static_history: bool,
     // Ring buffer of events.
     events: Vec<T>,
+    event_filter: MaybeEventFilter<T>,
 }
 
 impl<T: HasId> EventHistory<T> {
+    #[must_use]
     pub fn new(max_size: usize) -> Self {
         info!("Creating event history with max_size: {max_size}");
         Self {
@@ -39,6 +40,23 @@ impl<T: HasId> EventHistory<T> {
             history_start: 0,
             static_history: true,
             events: Vec::with_capacity(max_size),
+            event_filter: None,
+        }
+    }
+
+    pub fn with_filter<F>(max_size: usize, f: F) -> Self
+    where
+        F: Fn(&T) -> bool + Send + Sync + 'static,
+    {
+        info!("Creating event history with max_size: {max_size}");
+        Self {
+            max_size,
+            cursor: 0,
+            head: 0,
+            history_start: 0,
+            static_history: true,
+            events: Vec::with_capacity(max_size),
+            event_filter: Some(Box::new(f)),
         }
     }
 
@@ -114,6 +132,14 @@ impl<T: HasId> EventHistory<T> {
                 "Add skipped; duplicate item at cursor {} (head {})",
                 self.cursor, self.head
             );
+            return None;
+        }
+
+        // Todo: maybe remove, all filtering could happen prior to pushing events in the daemon,
+        // since the cli args will be more available there
+        if let Some(event_filter) = &self.event_filter
+            && !event_filter(&item)
+        {
             return None;
         }
 
@@ -389,5 +415,19 @@ mod test {
         assert!(event_history.backward() == Some(&3));
         assert!(event_history.backward() == Some(&2));
         assert!(event_history.backward().is_none());
+    }
+
+    #[test]
+    fn only_adds_filtered_items() {
+        let mut event_history: EventHistory<i16> = EventHistory::with_filter(4, |i| *i > 1);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+
+        assert!(event_history.events == [2, 3]);
+        assert!(event_history.history_start == 0);
+        assert!(event_history.head == 1);
+        assert!(event_history.cursor == 1);
     }
 }
