@@ -1,10 +1,15 @@
 use clap::{Args, Parser, Subcommand};
 
+use crate::event_history::HistorySize;
+
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct DaemonFocus {
     /// Restrict focus tracking to specific monitors (can be repeated)
     #[arg(long = "monitor")]
     pub monitors: Vec<i128>,
+    /// Maximum number of focus events to retain in history (must be >= 1)
+    #[arg(long = "history-size", default_value_t = HistorySize::default())]
+    pub history_size: HistorySize,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]

@@ -1,11 +1,54 @@
 use std::collections::HashSet;
+use std::num::NonZeroUsize;
+use std::str::FromStr;
 
 use log::info;
 
 use crate::types::HasId;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct HistorySize(NonZeroUsize);
+
+impl HistorySize {
+    pub const fn get(self) -> usize {
+        self.0.get()
+    }
+}
+
+impl std::fmt::Display for HistorySize {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "{}", self.get())
+    }
+}
+
+impl TryFrom<usize> for HistorySize {
+    type Error = String;
+
+    fn try_from(value: usize) -> Result<Self, Self::Error> {
+        NonZeroUsize::new(value)
+            .map(Self)
+            .ok_or_else(|| "history size must be greater than zero".to_string())
+    }
+}
+
+impl Default for HistorySize {
+    fn default() -> Self {
+        Self(NonZeroUsize::new(1000).expect("default history size is non-zero"))
+    }
+}
+
+impl FromStr for HistorySize {
+    type Err = String;
+
+    fn from_str(s: &str) -> Result<Self, Self::Err> {
+        s.parse::<NonZeroUsize>()
+            .map(Self)
+            .map_err(|_| "history-size must be a positive integer".to_string())
+    }
+}
+
 pub struct EventHistory<T: HasId> {
-    max_size: usize,
+    max_size: HistorySize,
     /// Moveable cursor in the event history. Can never exceed head, but can 'detatch' from head
     /// when tracking back through the event history.
     cursor: usize,
@@ -28,21 +71,21 @@ pub struct EventHistory<T: HasId> {
 
 impl<T: HasId> EventHistory<T> {
     #[must_use]
-    pub fn new(max_size: usize) -> Self {
-        info!("Creating event history with max_size: {max_size}");
+    pub fn new(max_size: HistorySize) -> Self {
+        info!("Creating event history with max_size: {}", max_size.get());
         Self {
             max_size,
             cursor: 0,
             head: 0,
             history_start: 0,
             static_history: true,
-            events: Vec::with_capacity(max_size),
+            events: Vec::with_capacity(max_size.get()),
             ignored_events: HashSet::default(),
         }
     }
 
     fn next_idx(&self, current: usize) -> usize {
-        if current == self.max_size - 1 {
+        if current == self.max_size.get() - 1 {
             0
         } else {
             current + 1
@@ -50,7 +93,7 @@ impl<T: HasId> EventHistory<T> {
     }
     fn prev_idx(&self, current: usize) -> usize {
         if current == 0 {
-            self.max_size - 1
+            self.max_size.get() - 1
         } else {
             current - 1
         }
@@ -138,7 +181,7 @@ impl<T: HasId> EventHistory<T> {
             self.history_start = self.next_idx(self.head);
         }
 
-        let insert_idx = if self.events.len() < self.max_size {
+        let insert_idx = if self.events.len() < self.max_size.get() {
             self.events.len()
         } else {
             self.next_idx(self.cursor)
@@ -153,7 +196,7 @@ impl<T: HasId> EventHistory<T> {
         // This catches the case where history is and is not static. In either case, if head
         // catchus up with history start, history will no longer be static, history start should
         // track just ahead of head.
-        let buffer_full = self.events.len() == self.max_size;
+        let buffer_full = self.events.len() == self.max_size.get();
         if buffer_full && self.head == self.history_start {
             self.static_history = false;
             let new_start = self.next_idx(self.history_start);
@@ -185,7 +228,7 @@ impl<T: HasId> EventHistory<T> {
 
 #[cfg(test)]
 mod test {
-    use crate::event_history::{EventHistory, HasId};
+    use crate::event_history::{EventHistory, HasId, HistorySize};
 
     impl HasId for i16 {
         type ID = i16;
@@ -196,7 +239,7 @@ mod test {
     }
 
     fn new_history(size: usize) -> EventHistory<i16> {
-        EventHistory::new(size)
+        EventHistory::new(HistorySize::try_from(size).unwrap())
     }
 
     #[test]

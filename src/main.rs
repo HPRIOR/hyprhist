@@ -1,4 +1,4 @@
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use env_logger::Env;
 use lib::{
@@ -8,6 +8,7 @@ use lib::{
     socket,
     types::{HyprEventHistory, SharedEventHistory, WindowEvent},
 };
+use tokio::sync::Mutex;
 
 fn shared_mutex<T>(of: T) -> Arc<Mutex<T>> {
     Arc::new(Mutex::new(of))
@@ -21,8 +22,11 @@ async fn main() -> anyhow::Result<()> {
 
     match cli.command {
         Command::Daemon { command } => {
+            let history_size = match &command {
+                cli::DaemonCommand::Focus(opts) => opts.history_size,
+            };
             let focus_events: SharedEventHistory<WindowEvent> =
-                shared_mutex(EventHistory::new(1000));
+                shared_mutex(EventHistory::new(history_size));
 
             let event_history = HyprEventHistory {
                 focus_events: Some(focus_events),

@@ -1,7 +1,8 @@
 use std::hash::Hash;
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 
 use chrono::NaiveDateTime;
+use tokio::sync::Mutex;
 
 use crate::event_history::EventHistory;
 

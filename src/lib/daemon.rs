@@ -1,11 +1,7 @@
 use chrono::Local;
-use hyprland::{
-    data::Clients,
-    event_listener::AsyncEventListener,
-    shared::HyprData,
-};
+use hyprland::{data::Clients, event_listener::AsyncEventListener, shared::HyprData};
 use log::{error, info};
-use std::sync::{Arc, PoisonError};
+use std::sync::Arc;
 
 use crate::{
     cli::{DaemonCommand, DaemonFocus},
@@ -26,6 +22,7 @@ pub async fn run(
     match command {
         DaemonCommand::Focus(DaemonFocus {
             monitors: requested_monitors,
+            ..
         }) => {
             if let Some(focus_events) = focus_events {
                 let requested_monitors = Arc::new(requested_monitors);
@@ -62,8 +59,7 @@ pub async fn run(
                             return;
                         }
 
-                        let mut event_history =
-                            focus_events.lock().unwrap_or_else(PoisonError::into_inner);
+                        let mut event_history = focus_events.lock().await;
 
                         let window_event = WindowEvent {
                             class: window_event_data.class,

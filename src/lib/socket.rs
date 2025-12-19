@@ -1,4 +1,4 @@
-use std::{path::Path, sync::PoisonError};
+use std::path::Path;
 
 use anyhow::Context;
 use hyprland::{
@@ -115,7 +115,7 @@ async fn navigate_focus_history(
     };
 
     let next_address = {
-        let mut history = focus_events.lock().unwrap_or_else(PoisonError::into_inner);
+        let mut history = focus_events.lock().await;
         match instruction {
             SocketInstruction::Next => history.forward().map(|e| e.address.clone()),
             SocketInstruction::Prev => history.backward().map(|e| e.address.clone()),
