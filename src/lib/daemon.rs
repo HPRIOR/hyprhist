@@ -1,63 +1,16 @@
 use chrono::Local;
 use hyprland::{
-    data::{Clients, Monitor, Monitors},
-    event_listener::{self, AsyncEventListener},
+    data::Clients,
+    event_listener::AsyncEventListener,
     shared::HyprData,
 };
 use log::{error, info};
-use std::sync::{Arc, PoisonError, RwLock};
+use std::sync::{Arc, PoisonError};
 
 use crate::{
     cli::{DaemonCommand, DaemonFocus},
     types::{HyprEventHistory, WindowEvent},
 };
-
-type SharedActiveMonitors = Arc<RwLock<Vec<Monitor>>>;
-
-async fn get_active_monitors() -> anyhow::Result<Vec<Monitor>> {
-    Ok(Monitors::get_async()
-        .await?
-        .into_iter()
-        .filter(|m| !m.disabled)
-        .collect())
-}
-
-// The simplest thing to do is query hyprland for the active monitors each time instead of using
-// the event arguments to track added/removed. The monitor removed listener presents a String for
-// the monitor name, so I'd have to query hyprland regardless in this case. In the case of mutex
-// poisening for add, I'd want to recover by querying hyprland.
-// fn listen_for_monitor_changes(
-//     event_listener: &mut AsyncEventListener,
-//     shared_active_monitors: &SharedActiveMonitors,
-// ) {
-//     let shared_active_monitors_for_remove = Arc::clone(shared_active_monitors);
-//     event_listener.add_monitor_removed_handler(move |_| {
-//         let shared_active_monitors = Arc::clone(&shared_active_monitors_for_remove);
-//         Box::pin(async move {
-//             let new_active_monitors = get_active_monitors()
-//                 .await
-//                 .expect("Error retrieving monitors from hyprland");
-//             let mut old_active_monitors = shared_active_monitors
-//                 .write()
-//                 .unwrap_or_else(PoisonError::into_inner);
-//             *old_active_monitors = new_active_monitors;
-//         })
-//     });
-//
-//     let shared_active_monitors_for_add = Arc::clone(shared_active_monitors);
-//     event_listener.add_monitor_added_handler(move |_| {
-//         let shared_active_monitors = Arc::clone(&shared_active_monitors_for_add);
-//         Box::pin(async move {
-//             let new_active_monitors = get_active_monitors()
-//                 .await
-//                 .expect("Error retrieving monitors from hyprland");
-//             let mut old_active_monitors = shared_active_monitors
-//                 .write()
-//                 .unwrap_or_else(PoisonError::into_inner);
-//             *old_active_monitors = new_active_monitors;
-//         })
-//     });
-// }
 
 #[allow(
     clippy::missing_errors_doc,
@@ -69,12 +22,6 @@ pub async fn run(
     HyprEventHistory { focus_events }: HyprEventHistory,
 ) -> anyhow::Result<()> {
     let mut event_listener = AsyncEventListener::new();
-
-    // let shared_active_monitors: SharedActiveMonitors =
-    //     Arc::new(RwLock::new(get_active_monitors().await?));
-
-    // listen_for_monitor_changes(&mut event_listener, &shared_active_monitors.clone()); // this may
-    // no tbe necessary
 
     match command {
         DaemonCommand::Focus(DaemonFocus {

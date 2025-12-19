@@ -1,11 +1,8 @@
-#![allow(unused)]
+use std::collections::HashSet;
 
-use hyprland::event_listener::Event;
 use log::info;
 
 use crate::types::HasId;
-
-type MaybeEventFilter<T> = Option<Box<dyn Fn(&T) -> bool + Send + Sync>>;
 
 pub struct EventHistory<T: HasId> {
     max_size: usize,
@@ -26,7 +23,7 @@ pub struct EventHistory<T: HasId> {
     static_history: bool,
     // Ring buffer of events.
     events: Vec<T>,
-    event_filter: MaybeEventFilter<T>,
+    ignored_events: HashSet<T::ID>,
 }
 
 impl<T: HasId> EventHistory<T> {
@@ -40,23 +37,7 @@ impl<T: HasId> EventHistory<T> {
             history_start: 0,
             static_history: true,
             events: Vec::with_capacity(max_size),
-            event_filter: None,
-        }
-    }
-
-    pub fn with_filter<F>(max_size: usize, f: F) -> Self
-    where
-        F: Fn(&T) -> bool + Send + Sync + 'static,
-    {
-        info!("Creating event history with max_size: {max_size}");
-        Self {
-            max_size,
-            cursor: 0,
-            head: 0,
-            history_start: 0,
-            static_history: true,
-            events: Vec::with_capacity(max_size),
-            event_filter: Some(Box::new(f)),
+            ignored_events: HashSet::default(),
         }
     }
 
@@ -99,7 +80,9 @@ impl<T: HasId> EventHistory<T> {
 
         let new_cursor_position = self.next_idx(self.cursor);
         self.cursor = new_cursor_position;
-        Some(&self.events[new_cursor_position])
+        let current_event: &T = &self.events[new_cursor_position];
+        self.ignored_events.insert(current_event.get_id().clone());
+        Some(current_event)
     }
 
     pub fn backward(&mut self) -> Option<&T> {
@@ -114,7 +97,9 @@ impl<T: HasId> EventHistory<T> {
         let new_cursor_position = self.prev_idx(self.cursor);
         if self.in_valid_range(new_cursor_position) {
             self.cursor = new_cursor_position;
-            Some(&self.events[new_cursor_position])
+            let current_event: &T = &self.events[new_cursor_position];
+            self.ignored_events.insert(current_event.get_id().clone());
+            Some(current_event)
         } else {
             info!("Backward move blocked; idx {new_cursor_position} outside valid range");
             None
@@ -122,6 +107,11 @@ impl<T: HasId> EventHistory<T> {
     }
 
     pub fn add(&mut self, item: T) -> Option<&T> {
+        if self.ignored_events.contains(item.get_id()) {
+            self.ignored_events.remove(item.get_id());
+            return None;
+        }
+
         let is_duplicate_item = self
             .events
             .get(self.cursor)
@@ -132,14 +122,6 @@ impl<T: HasId> EventHistory<T> {
                 "Add skipped; duplicate item at cursor {} (head {})",
                 self.cursor, self.head
             );
-            return None;
-        }
-
-        // Todo: maybe remove, all filtering could happen prior to pushing events in the daemon,
-        // since the cli args will be more available there
-        if let Some(event_filter) = &self.event_filter
-            && !event_filter(&item)
-        {
             return None;
         }
 
@@ -201,12 +183,6 @@ impl<T: HasId> EventHistory<T> {
     }
 }
 
-impl<T: HasId> Default for EventHistory<T> {
-    fn default() -> Self {
-        EventHistory::new(100)
-    }
-}
-
 #[cfg(test)]
 mod test {
     use crate::event_history::{EventHistory, HasId};
@@ -219,9 +195,13 @@ mod test {
         }
     }
 
+    fn new_history(size: usize) -> EventHistory<i16> {
+        EventHistory::new(size)
+    }
+
     #[test]
     fn can_add_events_to_history() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -232,7 +212,7 @@ mod test {
 
     #[test]
     fn duplicates_are_not_added_to_history() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         assert!(event_history.add(0) == Some(&0));
         assert!(event_history.add(0).is_none());
 
@@ -241,7 +221,7 @@ mod test {
 
     #[test]
     fn cursor_tracks_head_if_not_moved() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -253,7 +233,7 @@ mod test {
 
     #[test]
     fn cursor_cannot_move_forward_when_at_head() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -265,7 +245,7 @@ mod test {
 
     #[test]
     fn cursor_can_move_back_when_at_head() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -277,7 +257,7 @@ mod test {
 
     #[test]
     fn cursor_cannot_move_past_history_start() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -293,7 +273,7 @@ mod test {
 
     #[test]
     fn cursor_can_move_back_and_forward() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -312,7 +292,7 @@ mod test {
 
     #[test]
     fn adding_event_with_detatched_cursor_truncates_history() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -331,7 +311,7 @@ mod test {
 
     #[test]
     fn adding_event_beyond_capacity_wraps_head_around_buffer() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -344,7 +324,7 @@ mod test {
 
     #[test]
     fn cursor_can_wrap_back_around_buffer() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -356,7 +336,7 @@ mod test {
 
     #[test]
     fn adding_event_beyond_capacity_makes_history_dynamic() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -368,7 +348,7 @@ mod test {
 
     #[test]
     fn adding_event_beyond_capacity_moves_history_beyond_head() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -381,7 +361,7 @@ mod test {
 
     #[test]
     fn cursor_stops_at_dynamic_history_start() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -396,7 +376,7 @@ mod test {
 
     #[test]
     fn adding_event_with_detatched_cursor_truncates_history_around_wrapped_buffer() {
-        let mut event_history: EventHistory<i16> = EventHistory::new(4);
+        let mut event_history: EventHistory<i16> = new_history(4);
         event_history.add(0);
         event_history.add(1);
         event_history.add(2);
@@ -415,19 +395,5 @@ mod test {
         assert!(event_history.backward() == Some(&3));
         assert!(event_history.backward() == Some(&2));
         assert!(event_history.backward().is_none());
-    }
-
-    #[test]
-    fn only_adds_filtered_items() {
-        let mut event_history: EventHistory<i16> = EventHistory::with_filter(4, |i| *i > 1);
-        event_history.add(0);
-        event_history.add(1);
-        event_history.add(2);
-        event_history.add(3);
-
-        assert!(event_history.events == [2, 3]);
-        assert!(event_history.history_start == 0);
-        assert!(event_history.head == 1);
-        assert!(event_history.cursor == 1);
     }
 }

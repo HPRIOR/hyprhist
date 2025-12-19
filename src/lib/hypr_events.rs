@@ -5,7 +5,11 @@ use log::{error, info};
 use crate::types::{HyprEventHistory, WindowEvent};
 
 #[allow(clippy::missing_errors_doc)]
-pub async fn listen(HyprEventHistory { focus_events }: HyprEventHistory) -> anyhow::Result<()> {
+pub async fn listen(
+    HyprEventHistory {
+        focus_events,
+    }: HyprEventHistory,
+) -> anyhow::Result<()> {
     let mut event_listener = AsyncEventListener::new();
 
     if let Some(focus_events) = focus_events {

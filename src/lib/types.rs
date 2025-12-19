@@ -1,3 +1,4 @@
+use std::hash::Hash;
 use std::sync::{Arc, Mutex};
 
 use chrono::NaiveDateTime;
@@ -8,7 +9,7 @@ pub type SharedEventHistory<T> = Arc<Mutex<EventHistory<T>>>;
 
 // Events
 pub trait HasId {
-    type ID: Eq + PartialEq;
+    type ID: Eq + PartialEq + Hash + Clone;
     fn get_id(&self) -> &Self::ID;
 }
 

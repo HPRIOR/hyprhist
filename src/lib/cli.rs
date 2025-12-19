@@ -7,12 +7,10 @@ pub struct DaemonFocus {
     pub monitors: Vec<i128>,
 }
 
-
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub enum DaemonCommand {
     Focus(DaemonFocus),
 }
-
 
 #[derive(Debug, Clone, PartialEq, Eq, Subcommand)]
 pub enum FocusCommand {

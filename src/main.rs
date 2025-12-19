@@ -2,10 +2,10 @@ use std::sync::{Arc, Mutex};
 
 use env_logger::Env;
 use lib::{
-    cli::{self, Cli, Command, DaemonCommand, DaemonFocus, FocusCommand},
+    cli::{self, Cli, Command},
     daemon,
-    event_history::{self, EventHistory},
-    hypr_events::{self},
+    event_history::EventHistory,
+    socket,
     types::{HyprEventHistory, SharedEventHistory, WindowEvent},
 };
 
@@ -19,21 +19,22 @@ async fn main() -> anyhow::Result<()> {
 
     let cli: Cli = cli::parse_cli();
 
-    let focus_events: SharedEventHistory<WindowEvent> = shared_mutex(EventHistory::default());
-
-    let event_history = HyprEventHistory {
-        focus_events: Some(focus_events),
-    };
-
-    hypr_events::listen(event_history.clone()).await?;
-
     match cli.command {
-        Command::Daemon { command } => daemon::run(command, event_history.clone()).await?,
-        Command::Focus { command } => match command {
-          FocusCommand::Next => todo!(),
-            FocusCommand::Prev => todo!(),
-        },
-    };
+        Command::Daemon { command } => {
+            let focus_events: SharedEventHistory<WindowEvent> =
+                shared_mutex(EventHistory::new(1000));
+
+            let event_history = HyprEventHistory {
+                focus_events: Some(focus_events),
+            };
+
+            tokio::try_join!(
+                daemon::run(command.clone(), event_history.clone()),
+                socket::listen(command, event_history)
+            )?;
+        }
+        Command::Focus { command } => socket::send_focus_command(command).await?,
+    }
 
     Ok(())
 }
