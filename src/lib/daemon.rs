@@ -75,7 +75,7 @@ pub async fn run(
                             class: _,
                         }) = event_history.add(window_event)
                         {
-                            info!("Registered window event with address {address} at {time}");
+                            info!("Registered window event with id {address} at {time}");
                         }
                     })
                 });

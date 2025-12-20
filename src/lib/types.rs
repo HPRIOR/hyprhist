@@ -1,3 +1,4 @@
+use std::fmt::{Debug, Display};
 use std::hash::Hash;
 use std::sync::Arc;
 
@@ -10,7 +11,7 @@ pub type SharedEventHistory<T> = Arc<Mutex<EventHistory<T>>>;
 
 // Events
 pub trait HasId {
-    type ID: Eq + PartialEq + Hash + Clone;
+    type ID: Eq + PartialEq + Hash + Clone + Display + Debug;
     fn get_id(&self) -> &Self::ID;
 }
 

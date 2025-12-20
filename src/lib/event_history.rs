@@ -2,7 +2,7 @@ use std::collections::HashSet;
 use std::num::NonZeroUsize;
 use std::str::FromStr;
 
-use log::info;
+use log::{debug, info};
 
 use crate::types::HasId;
 
@@ -125,6 +125,11 @@ impl<T: HasId> EventHistory<T> {
         self.cursor = new_cursor_position;
         let current_event: &T = &self.events[new_cursor_position];
         self.ignored_events.insert(current_event.get_id().clone());
+        debug!(
+            "Forward invoked; cursor moved to {new_cursor_position} with id {}; {} inserted into ignore set",
+            current_event.get_id(),
+            current_event.get_id()
+        );
         Some(current_event)
     }
 
@@ -142,6 +147,11 @@ impl<T: HasId> EventHistory<T> {
             self.cursor = new_cursor_position;
             let current_event: &T = &self.events[new_cursor_position];
             self.ignored_events.insert(current_event.get_id().clone());
+            debug!(
+                "Backward invoked; cursor moved to {new_cursor_position} with id {}; {} inserted into ignore set",
+                current_event.get_id(),
+                current_event.get_id()
+            );
             Some(current_event)
         } else {
             info!("Backward move blocked; idx {new_cursor_position} outside valid range");
@@ -151,6 +161,11 @@ impl<T: HasId> EventHistory<T> {
 
     pub fn add(&mut self, item: T) -> Option<&T> {
         if self.ignored_events.contains(item.get_id()) {
+            debug!(
+                "Ignoring event with {}; present in ignore set: {:?}",
+                item.get_id(),
+                self.ignored_events
+            );
             self.ignored_events.remove(item.get_id());
             return None;
         }
@@ -181,9 +196,11 @@ impl<T: HasId> EventHistory<T> {
             self.history_start = self.next_idx(self.head);
         }
 
-        let insert_idx = if self.events.len() < self.max_size.get() {
-            self.events.len()
+        let insert_idx = if self.events.is_empty() {
+            0
         } else {
+            // Always place the next event immediately after the current cursor position,
+            // overwriting any forward history regardless of whether the buffer has filled.
             self.next_idx(self.cursor)
         };
 
@@ -200,7 +217,7 @@ impl<T: HasId> EventHistory<T> {
         if buffer_full && self.head == self.history_start {
             self.static_history = false;
             let new_start = self.next_idx(self.history_start);
-            info!(
+            debug!(
                 "History buffer full; advancing history_start {} -> {}",
                 self.history_start, new_start
             );
@@ -215,10 +232,15 @@ impl<T: HasId> EventHistory<T> {
             Some(&self.events[insert_idx])
         };
 
-        if result.is_some() {
+        if let Some(result) = result {
             info!(
-                "Event added at idx {}; cursor={}, head={}, history_start={}, static_history={}",
-                insert_idx, self.cursor, self.head, self.history_start, self.static_history
+                "Event added at idx {}; id={}; cursor={}, head={}, history_start={}, static_history={}",
+                insert_idx,
+                result.get_id(),
+                self.cursor,
+                self.head,
+                self.history_start,
+                self.static_history
             );
         }
 
@@ -228,6 +250,8 @@ impl<T: HasId> EventHistory<T> {
 
 #[cfg(test)]
 mod test {
+    use std::collections::HashSet;
+
     use crate::event_history::{EventHistory, HasId, HistorySize};
 
     impl HasId for i16 {
@@ -344,7 +368,7 @@ mod test {
         assert!(event_history.backward() == Some(&2));
         assert!(event_history.backward() == Some(&1));
 
-        event_history.add(4);
+        assert_eq!(event_history.add(4), Some(&4));
         // length of events will not have changed
         assert!(event_history.events.len() == 4);
         assert!(event_history.cursor == 2);
@@ -363,6 +387,21 @@ mod test {
 
         assert!(event_history.head == 0);
         assert!(event_history.cursor == 0);
+    }
+
+    #[test]
+    fn cursor_move_will_make_same_id_ignored_on_next_add() {
+        let mut event_history: EventHistory<i16> = new_history(4);
+        event_history.add(0);
+        event_history.add(1);
+        event_history.add(2);
+        event_history.add(3);
+        event_history.add(4);
+
+        assert!(event_history.backward() == Some(&3));
+        println!("{:?}", event_history.ignored_events);
+        assert!(event_history.add(3).is_none());
+        println!("{:?}", event_history.ignored_events);
     }
 
     #[test]

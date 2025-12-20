@@ -5,7 +5,7 @@ use hyprland::{
     dispatch::{Dispatch, DispatchType, WindowIdentifier},
     shared::Address,
 };
-use log::{error, info, warn};
+use log::{debug, error, info, warn};
 use tokio::{
     fs,
     io::{AsyncBufReadExt, AsyncWriteExt, BufReader},
@@ -109,6 +109,8 @@ async fn navigate_focus_history(
     instruction: SocketInstruction,
     HyprEventHistory { focus_events }: &HyprEventHistory,
 ) -> anyhow::Result<()> {
+    debug!("Recieved socked instruction of {instruction:?}");
+
     let Some(focus_events) = focus_events else {
         warn!("Received focus navigation without focus event history configured");
         return Ok(());
@@ -124,7 +126,7 @@ async fn navigate_focus_history(
 
     if let Some(addr) = next_address {
         info!(
-            "Moved focus history cursor with {} (address {})",
+            "Moved focus history cursor with {} (id {})",
             instruction.as_str(),
             addr
         );

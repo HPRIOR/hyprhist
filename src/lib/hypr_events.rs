@@ -30,7 +30,7 @@ pub async fn listen(HyprEventHistory { focus_events }: HyprEventHistory) -> anyh
                     class: _,
                 }) = add_window_event_result
                 {
-                    info!("Registered window event with address {address} at {time}");
+                    info!("Registered window event with id {address} at {time}");
                 } else {
                     error!("Failed to register event!");
                 }
