@@ -1,6 +1,11 @@
 use std::sync::Arc;
 
+use chrono::Local;
 use env_logger::Env;
+use hyprland::{data::Client, shared::HyprDataActiveOptional};
+use log::error;
+use tokio::sync::Mutex;
+
 use lib::{
     cli::{self, Cli, Command},
     daemon,
@@ -8,10 +13,25 @@ use lib::{
     socket,
     types::{HyprEventHistory, SharedEventHistory, WindowEvent},
 };
-use tokio::sync::Mutex;
 
 fn shared_mutex<T>(of: T) -> Arc<Mutex<T>> {
     Arc::new(Mutex::new(of))
+}
+
+async fn current_focused_window_event() -> Option<WindowEvent> {
+    match Client::get_active_async().await {
+        Ok(Some(client)) => Some(WindowEvent {
+            class: client.class,
+            monitor: client.monitor,
+            address: client.address.to_string(),
+            time: Local::now().naive_local(),
+        }),
+        Ok(None) => None,
+        Err(err) => {
+            error!("Failed to fetch active window: {err}");
+            None
+        }
+    }
 }
 
 #[tokio::main(flavor = "current_thread")]
@@ -25,8 +45,15 @@ async fn main() -> anyhow::Result<()> {
             let history_size = match &command {
                 cli::DaemonCommand::Focus(opts) => opts.history_size,
             };
-            let focus_events: SharedEventHistory<WindowEvent> =
-                shared_mutex(EventHistory::new(history_size));
+
+            let focus_events: SharedEventHistory<WindowEvent> = {
+                let event_history = match current_focused_window_event().await {
+                    Some(event) => EventHistory::bootstrap(event, history_size),
+                    None => EventHistory::new(history_size),
+                };
+
+                shared_mutex(event_history)
+            };
 
             let event_history = HyprEventHistory {
                 focus_events: Some(focus_events),

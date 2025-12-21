@@ -84,6 +84,16 @@ impl<T: HasId> EventHistory<T> {
         }
     }
 
+    pub fn bootstrap(init: T, max_size: HistorySize) -> Self {
+        info!(
+            "Bootstrapping event history with max_size: {}",
+            max_size.get()
+        );
+        let mut event_history = Self::new(max_size);
+        event_history.add(init);
+        event_history
+    }
+
     fn next_idx(&self, current: usize) -> usize {
         if current == self.max_size.get() - 1 {
             0

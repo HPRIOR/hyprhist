@@ -1,5 +1,5 @@
 use chrono::Local;
-use hyprland::event_listener::AsyncEventListener;
+use hyprland::{data::Clients, event_listener::AsyncEventListener, shared::HyprData};
 use log::{error, info};
 
 use crate::types::{HyprEventHistory, WindowEvent};
@@ -16,13 +16,25 @@ pub async fn listen(HyprEventHistory { focus_events }: HyprEventHistory) -> anyh
                     return;
                 };
 
-                let mut weh = focus_events.lock().await;
-                let add_window_event_result = weh.add(WindowEvent {
+                let monitor = match Clients::get_async().await {
+                    Ok(clients) => clients
+                        .iter()
+                        .find(|c| c.address == window_event_data.address)
+                        .and_then(|c| c.monitor),
+                    Err(err) => {
+                        error!("Failed to fetch clients while recording focus event: {err}");
+                        None
+                    }
+                };
+
+                let mut window_event_history = focus_events.lock().await;
+                let add_window_event_result = window_event_history.add(WindowEvent {
                     class: window_event_data.class,
-                    monitor: None,
+                    monitor,
                     address: window_event_data.address.to_string(),
                     time: Local::now().naive_local(),
                 });
+
                 if let Some(WindowEvent {
                     address,
                     time,
