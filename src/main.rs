@@ -38,18 +38,25 @@ async fn current_focused_window_event() -> Option<WindowEvent> {
 async fn main() -> anyhow::Result<()> {
     env_logger::Builder::from_env(Env::default().default_filter_or("info")).init();
 
-    let cli: Cli = cli::parse_cli();
+    let cli: Cli = cli::parse_cli().await?;
 
     match cli.command {
         Command::Daemon { command } => {
-            let history_size = match &command {
-                cli::DaemonCommand::Focus(opts) => opts.history_size,
+            let (history_size, requested_monitor_ids) = match &command {
+                cli::DaemonCommand::Focus(opts) => (
+                    opts.history_size,
+                    opts.monitors.as_ref().map_or_else(Vec::default, |m| {
+                        m.iter().map(|x| Some(x.id)).collect::<Vec<Option<i128>>>()
+                    }),
+                ),
             };
 
             let focus_events: SharedEventHistory<WindowEvent> = {
                 let event_history = match current_focused_window_event().await {
-                    Some(event) => EventHistory::bootstrap(event, history_size),
-                    None => EventHistory::new(history_size),
+                    Some(event) if requested_monitor_ids.contains(&event.monitor) => {
+                        EventHistory::bootstrap(event, history_size)
+                    }
+                    _ => EventHistory::new(history_size),
                 };
 
                 shared_mutex(event_history)

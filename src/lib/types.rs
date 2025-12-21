@@ -10,7 +10,7 @@ use crate::event_history::EventHistory;
 pub type SharedEventHistory<T> = Arc<Mutex<EventHistory<T>>>;
 
 // Events
-pub trait HasId {
+pub trait EventItem {
     type ID: Eq + PartialEq + Hash + Clone + Display + Debug;
     fn get_id(&self) -> &Self::ID;
 }
@@ -27,7 +27,7 @@ pub struct HyprEventHistory {
     pub focus_events: Option<SharedEventHistory<WindowEvent>>,
 }
 
-impl HasId for WindowEvent {
+impl EventItem for WindowEvent {
     type ID = String;
 
     fn get_id(&self) -> &Self::ID {
