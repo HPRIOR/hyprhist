@@ -16,10 +16,10 @@ enum EventStatus<T> {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum CursorRealignment {
-    PreviousActive,
-    NextActive,
-    LastInactive,
-    ResetToStart,
+    PreviousActive(usize),
+    NextActive(usize),
+    LastInactive(usize),
+    ResetToStart(usize),
 }
 
 impl<T: Clone> Default for EventStatus<T> {
@@ -150,18 +150,18 @@ impl<T: EventItem> EventHistory<T> {
         F: FnMut(EventStatus<T>) -> Option<EventStatus<T>>,
     {
         let mut changed_at_cursor = false;
-        let mut id_at_deleted_cursor = None;
+        let mut id_at_updated_cursor = None;
 
         for (idx, event) in &mut self.events.iter_mut().enumerate() {
-            if event
+            let id_matching = event
                 .get_event()
-                .map_or_else(|| false, |e| e.get_id() == id)
-            {
+                .map_or_else(|| false, |e| e.get_id() == id);
+            if id_matching {
                 let previous_event = mem::replace(event, EventStatus::Deleted);
 
                 if idx == self.cursor {
                     changed_at_cursor = true;
-                    id_at_deleted_cursor = previous_event.get_event().map(T::get_id).cloned();
+                    id_at_updated_cursor = previous_event.get_event().map(T::get_id).cloned();
                 }
 
                 let new_status = on_match(previous_event);
@@ -177,17 +177,17 @@ impl<T: EventItem> EventHistory<T> {
         }
 
         if let Some(prev_active_idx) =
-            self.prev_active_idx(self.cursor, id_at_deleted_cursor.as_ref())
+            self.prev_active_idx(self.cursor, id_at_updated_cursor.as_ref())
         {
             self.cursor = prev_active_idx;
-            return Some(CursorRealignment::PreviousActive);
+            return Some(CursorRealignment::PreviousActive(prev_active_idx));
         }
 
         if let Some(next_active_idx) =
-            self.next_active_idx(self.cursor, id_at_deleted_cursor.as_ref())
+            self.next_active_idx(self.cursor, id_at_updated_cursor.as_ref())
         {
             self.cursor = next_active_idx;
-            return Some(CursorRealignment::NextActive);
+            return Some(CursorRealignment::NextActive(next_active_idx));
         }
 
         if let Some((last_inactive_idx, _)) = self
@@ -198,11 +198,18 @@ impl<T: EventItem> EventHistory<T> {
             .find(|(_, status)| matches!(status, EventStatus::Inactive(_)))
         {
             self.cursor = last_inactive_idx;
-            return Some(CursorRealignment::LastInactive);
+            return Some(CursorRealignment::LastInactive(last_inactive_idx));
         }
 
         self.cursor = 0;
-        Some(CursorRealignment::ResetToStart)
+        Some(CursorRealignment::ResetToStart(0))
+    }
+
+    #[allow(clippy::missing_panics_doc)]
+    pub fn current_event(&mut self) -> &T {
+        let current_event = self.events[self.cursor].get_event().unwrap();
+        self.ignored_events.insert(current_event.get_id().clone());
+        current_event
     }
 
     pub fn forward(&mut self) -> Option<&T> {
@@ -245,20 +252,27 @@ impl<T: EventItem> EventHistory<T> {
     }
 
     pub fn remove(&mut self, id: &T::ID) {
+        info!("Removing event with id {id}");
         if let Some(realignment) = self.update_matching_events(id, |_| None) {
             match realignment {
-                CursorRealignment::PreviousActive => {
-                    debug!("Cursor present in deleted events, moving to previous active event");
-                }
-                CursorRealignment::NextActive => {
-                    debug!("Cursor present in deleted events, moving to next active event");
-                }
-                CursorRealignment::LastInactive => {
-                    debug!("Cursor present in deleted events, moving to last inactive event");
-                }
-                CursorRealignment::ResetToStart => {
+                CursorRealignment::PreviousActive(idx) => {
                     debug!(
-                        "Cursor present in deleted events, no active or inactive entries found; moving to 0"
+                        "Cursor present in deleted events, moving to previous active event at position {idx}"
+                    );
+                }
+                CursorRealignment::NextActive(idx) => {
+                    debug!(
+                        "Cursor present in deleted events, moving to next active event at position {idx}"
+                    );
+                }
+                CursorRealignment::LastInactive(idx) => {
+                    debug!(
+                        "Cursor present in deleted events, moving to last inactive event at position {idx}"
+                    );
+                }
+                CursorRealignment::ResetToStart(idx) => {
+                    debug!(
+                        "Cursor present in deleted events, no active or inactive entries found; moving to {idx}"
                     );
                 }
             }
@@ -266,6 +280,7 @@ impl<T: EventItem> EventHistory<T> {
     }
 
     pub fn deactivate(&mut self, id: &T::ID) {
+        info!("Deactivating event with id {id}");
         if let Some(realignment) =
             self.update_matching_events(id, |previous_event| match previous_event {
                 EventStatus::Active(t) => Some(EventStatus::Inactive(t)),
@@ -273,18 +288,24 @@ impl<T: EventItem> EventHistory<T> {
             })
         {
             match realignment {
-                CursorRealignment::PreviousActive => {
-                    debug!("Cursor present in deactivated events, moving to previous active event");
-                }
-                CursorRealignment::NextActive => {
-                    debug!("Cursor present in deactivated events, moving to next active event");
-                }
-                CursorRealignment::LastInactive => {
-                    debug!("Cursor present in deactivated events, moving to last inactive event");
-                }
-                CursorRealignment::ResetToStart => {
+                CursorRealignment::PreviousActive(idx) => {
                     debug!(
-                        "Cursor present in deactivated events, no active or inactive entries found; moving to 0"
+                        "Cursor present in deactivated events, moving to previous active event at poistion {idx}"
+                    );
+                }
+                CursorRealignment::NextActive(idx) => {
+                    debug!(
+                        "Cursor present in deactivated events, moving to next active event at poistion {idx}"
+                    );
+                }
+                CursorRealignment::LastInactive(idx) => {
+                    debug!(
+                        "Cursor present in deactivated events, moving to last inactive event at position {idx}"
+                    );
+                }
+                CursorRealignment::ResetToStart(idx) => {
+                    debug!(
+                        "Cursor present in deactivated events, no active or inactive entries found; moving to {idx}"
                     );
                 }
             }
@@ -292,11 +313,12 @@ impl<T: EventItem> EventHistory<T> {
     }
 
     pub fn activate(&mut self, id: &T::ID) {
+        info!("Activating event with id {id}");
         for event in &mut self.events {
-            if event
+            let event_matches_id = event
                 .get_event()
-                .map_or_else(|| false, |e| e.get_id() == id)
-            {
+                .map_or_else(|| false, |e| e.get_id() == id);
+            if event_matches_id {
                 let previous_event = mem::replace(event, EventStatus::Deleted);
                 if let EventStatus::Inactive(t) | EventStatus::Active(t) = previous_event {
                     *event = EventStatus::Active(t);
@@ -929,7 +951,7 @@ mod tests {
             1,
         );
 
-        history.activate(&1);
+        let _ = history.activate(&1);
 
         assert!(matches!(history.events[0], EventStatus::Active(1)));
         assert!(matches!(history.events[1], EventStatus::Active(2)));
@@ -949,8 +971,8 @@ mod tests {
             1,
         );
 
-        history.activate(&1);
-        history.activate(&3);
+        let _ = history.activate(&1);
+        let _ = history.activate(&3);
 
         assert!(matches!(history.events[0], EventStatus::Active(1)));
         assert!(matches!(history.events[1], EventStatus::Active(2)));
