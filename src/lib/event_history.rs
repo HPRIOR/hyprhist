@@ -1,4 +1,5 @@
 use std::collections::{HashSet, VecDeque};
+use std::fmt::Display;
 use std::mem::{self};
 use std::num::NonZeroUsize;
 use std::str::FromStr;
@@ -47,7 +48,7 @@ impl HistorySize {
     }
 }
 
-impl std::fmt::Display for HistorySize {
+impl Display for HistorySize {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}", self.get())
     }
@@ -65,7 +66,7 @@ impl TryFrom<usize> for HistorySize {
 
 impl Default for HistorySize {
     fn default() -> Self {
-        Self(NonZeroUsize::new(1000).expect("default history size is non-zero"))
+        Self(NonZeroUsize::new(300).expect("default history size is non-zero"))
     }
 }
 
@@ -951,7 +952,7 @@ mod tests {
             1,
         );
 
-        let _ = history.activate(&1);
+        history.activate(&1);
 
         assert!(matches!(history.events[0], EventStatus::Active(1)));
         assert!(matches!(history.events[1], EventStatus::Active(2)));
@@ -971,8 +972,8 @@ mod tests {
             1,
         );
 
-        let _ = history.activate(&1);
-        let _ = history.activate(&3);
+        history.activate(&1);
+        history.activate(&3);
 
         assert!(matches!(history.events[0], EventStatus::Active(1)));
         assert!(matches!(history.events[1], EventStatus::Active(2)));
