@@ -16,10 +16,8 @@ pub enum FocusCommand {
 
 #[derive(Debug, Clone, PartialEq, Eq, Args)]
 pub struct DaemonArgs {
-    /// Restrict focus tracking to specific monitors (can be repeated)
     #[arg(long = "monitor")]
     pub requested_monitors: Vec<String>,
-    /// Maximum number of focus events to retain in history (must be >= 1)
     #[arg(long = "history-size", default_value_t = HistorySize::default())]
     pub history_size: HistorySize,
 }
@@ -41,7 +39,6 @@ pub enum Command {
     },
 }
 
-/// Root CLI type as parsed directly from the command line.
 #[derive(Debug, Clone, PartialEq, Eq, Parser)]
 #[command(name = "hyprhist", about = "hyprhist CLI")]
 pub struct Cli {
