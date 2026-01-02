@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install Nix
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Set Nix system
+        run: echo "SYSTEM=$(nix eval --impure --expr builtins.currentSystem --raw)" >> "$GITHUB_ENV"
+
+      - name: Build package
+        run: nix build .# --print-build-logs
+
+      - name: Format check
+        run: nix build .#checks.${SYSTEM}.fmt --print-build-logs
+
+      - name: Clippy
+        run: nix build .#checks.${SYSTEM}.clippy --print-build-logs
+
+      - name: Tests
+        run: nix build .#checks.${SYSTEM}.tests --print-build-logs

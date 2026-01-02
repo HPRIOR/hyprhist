@@ -57,8 +57,8 @@
         // {
           inherit cargoArtifacts;
           meta = {
-            description = "Rust application";
             mainProgram = "hyprhist";
+            description = "A utility for traversing focus history across Hyprland windows.";
           };
         });
     in {
@@ -102,7 +102,7 @@
             # Additional tools
             git
           ]
-          ++ [ toolchain ]
+          ++ [toolchain]
           ++ commonArgs.buildInputs;
 
         shellHook = ''
