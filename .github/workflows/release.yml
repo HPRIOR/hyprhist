@@ -1,0 +1,96 @@
+name: Release
+
+on:
+  workflow_run:
+    workflows: ["CI"]
+    types:
+      - completed
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    # Only proceed if CI succeeded
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout the exact commit CI built
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 0  # needed to see tags
+
+      - name: Determine whether this commit is an exact v* tag
+        id: tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          # This prints the tag if HEAD is exactly at a tag; otherwise it fails.
+          if TAG=$(git describe --tags --exact-match 2>/dev/null); then
+            echo "Found exact tag: $TAG"
+          else
+            echo "No exact tag on this commit; nothing to release."
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          # Only release tags matching v*
+          if [[ "$TAG" != v* ]]; then
+            echo "Tag '$TAG' does not match v*; nothing to release."
+            echo "is_tag=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "is_tag=true" >> "$GITHUB_OUTPUT"
+          echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Stop if not a release tag
+        if: steps.tag.outputs.is_tag != 'true'
+        run: echo "Not a v* tag; skipping release."
+
+      - name: Install Nix
+        if: steps.tag.outputs.is_tag == 'true'
+        uses: cachix/install-nix-action@v27
+        with:
+          extra_nix_config: |
+            experimental-features = nix-command flakes
+
+      - name: Build package (release artifact)
+        if: steps.tag.outputs.is_tag == 'true'
+        run: nix build .# --print-build-logs
+
+      - name: Package artifact
+        if: steps.tag.outputs.is_tag == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.tag.outputs.tag }}"
+
+          mkdir -p dist
+
+          # Nix default output symlink is ./result
+          # If your binary is at result/bin/hyprhist this will work.
+          test -x result/bin/hyprhist
+
+          # Create a tarball containing the binary at top-level: hyprhist
+          cp -v result/bin/hyprhist dist/hyprhist
+          tar -C dist -czf "dist/hyprhist-${TAG}-x86_64-linux.tar.gz" hyprhist
+          rm -f dist/hyprhist
+
+          # Checksums
+          (cd dist && sha256sum "hyprhist-${TAG}-x86_64-linux.tar.gz" > "SHA256SUMS.txt")
+
+      - name: Create GitHub Release and upload assets
+        if: steps.tag.outputs.is_tag == 'true'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.tag.outputs.tag }}
+          generate_release_notes: true
+          files: |
+            dist/hyprhist-${{ steps.tag.outputs.tag }}-x86_64-linux.tar.gz
+            dist/SHA256SUMS.txt
+
